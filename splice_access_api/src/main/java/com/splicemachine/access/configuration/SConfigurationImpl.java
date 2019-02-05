@@ -94,6 +94,9 @@ public final class SConfigurationImpl implements SConfiguration {
     private final  long backupMaxBandwidthMB;
     private final  boolean backupUseDistcp;
     private final  int backupIOBufferSize;
+    private final  int snapshotInterval;
+    private final  int replicationSinkPort;
+    private final int replicationProgressUpdateInterval;
 
     // OperationConfiguration
     private final  int sequenceBlockSize;
@@ -367,6 +370,18 @@ public final class SConfigurationImpl implements SConfiguration {
     @Override
     public int getBackupIOBufferSize() {
         return backupIOBufferSize;
+    }
+    @Override
+    public int getSnapshotInterval() {
+        return snapshotInterval;
+    }
+    @Override
+    public int getReplicationSinkPort() {
+        return replicationSinkPort;
+    }
+    @Override
+    public int getReplicationProgressUpdateInterval() {
+        return replicationProgressUpdateInterval;
     }
     @Override
     public String getCompressionAlgorithm() {
@@ -870,6 +885,9 @@ public final class SConfigurationImpl implements SConfiguration {
         backupMaxBandwidthMB = builder.backupMaxBandwidthMB;
         backupUseDistcp = builder.backupUseDistcp;
         backupIOBufferSize = builder.backupIOBufferSize;
+        snapshotInterval = builder.snapshotInterval;
+        replicationSinkPort = builder.replicationSinkPort;
+        replicationProgressUpdateInterval = builder.replicationProgressUpdateInterval;
         compressionAlgorithm = builder.compressionAlgorithm;
         namespace = builder.namespace;
         spliceRootPath = builder.spliceRootPath;
