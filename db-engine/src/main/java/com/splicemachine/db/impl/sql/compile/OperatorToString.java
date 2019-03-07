@@ -33,6 +33,7 @@ package com.splicemachine.db.impl.sql.compile;
 
 import com.splicemachine.db.iapi.error.StandardException;
 import com.splicemachine.db.iapi.sql.compile.OptimizablePredicate;
+import com.splicemachine.db.iapi.types.*;
 
 import static java.lang.String.format;
 
@@ -43,6 +44,7 @@ import static java.lang.String.format;
  */
 public class OperatorToString {
 
+    private static ThreadLocal<Boolean> SPARK_EXPRESSION = new ThreadLocal<>();
 
     /**
      * Satisfy non-guava (derby client) compile dependency.
@@ -82,20 +84,34 @@ public class OperatorToString {
     /**
      * Return string representation of a Derby expression
      */
-    public static String opToString(ValueNode operand){
+    public static String opToString(ValueNode operand) {
+        SPARK_EXPRESSION.set(Boolean.FALSE);
+        return opToString2(operand);
+    }
+
+    /**
+     * Return string representation of a Derby expression, with column
+     * references indicating column names in the source Data Frame.
+     */
+    public static String opToSparkString(ValueNode operand) {
+        SPARK_EXPRESSION.set(Boolean.TRUE);
+        return opToString2(operand);
+    }
+
+    public static String opToString2(ValueNode operand){
         if(operand==null){
             return "";
         }else if(operand instanceof UnaryOperatorNode){
             UnaryOperatorNode uop=(UnaryOperatorNode)operand;
-            return format("%s(%s)",uop.getOperatorString(),opToString(uop.getOperand()));
+            return format("%s(%s)",uop.getOperatorString(),opToString2(uop.getOperand()));
         }else if(operand instanceof BinaryRelationalOperatorNode){
             BinaryRelationalOperatorNode bron=(BinaryRelationalOperatorNode)operand;
             try {
                 InListOperatorNode inListOp = bron.getInListOp();
-                if (inListOp != null) return opToString(inListOp);
+                if (inListOp != null) return opToString2(inListOp);
     
-                return format("(%s %s %s)", opToString(bron.getLeftOperand()),
-                    bron.getOperatorString(), opToString(bron.getRightOperand()));
+                return format("(%s %s %s)", opToString2(bron.getLeftOperand()),
+                    bron.getOperatorString(), opToString2(bron.getRightOperand()));
             }
             catch (StandardException e) {
                 return "PARSE_ERROR_WHILE_CONVERTING_OPERATOR";
@@ -110,34 +126,40 @@ public class OperatorToString {
                     ValueNode vn = (ValueNode) vnl.elementAt(i);
                     if (i != 0)
                         inList.append(",");
-                    inList.append(opToString(vn));
+                    inList.append(opToString2(vn));
                 }
                 inList.append(")");
             }
             else
-                inList.append(opToString(blon.getLeftOperand()));
+                inList.append(opToString2(blon.getLeftOperand()));
             inList.append(" ").append(blon.getOperator()).append(" (");
             ValueNodeList rightOperandList=blon.getRightOperandList();
             boolean isFirst = true;
             for(Object qtn: rightOperandList){
                 if(isFirst) isFirst = false;
                 else inList = inList.append(",");
-                inList = inList.append(opToString((ValueNode)qtn));
+                inList = inList.append(opToString2((ValueNode)qtn));
             }
             return inList.append("))").toString();
         }else if (operand instanceof BinaryOperatorNode) {
             BinaryOperatorNode bop = (BinaryOperatorNode) operand;
-            return format("(%s %s %s)", opToString(bop.getLeftOperand()),
-                          bop.getOperatorString(), opToString(bop.getRightOperand()));
+            if (SPARK_EXPRESSION.get()) {
+                if (operand instanceof ConcatenationOperatorNode)
+                    return format("concat(%s, %s)", opToString2(bop.getLeftOperand()),
+                           opToString2(bop.getRightOperand()));
+            }
+
+            return format("(%s %s %s)", opToString2(bop.getLeftOperand()),
+                          bop.getOperatorString(), opToString2(bop.getRightOperand()));
         } else if (operand instanceof ArrayOperatorNode) {
             ArrayOperatorNode array = (ArrayOperatorNode) operand;
             ValueNode op = array.operand;
-            return format("%s[%d]", op == null ? "" : opToString(op), array.extractField);
+            return format("%s[%d]", op == null ? "" : opToString2(op), array.extractField);
         } else if (operand instanceof TernaryOperatorNode) {
             TernaryOperatorNode top = (TernaryOperatorNode) operand;
             ValueNode rightOp = top.getRightOperand();
-            return format("%s(%s, %s%s)", top.getOperator(), opToString(top.getReceiver()),
-                          opToString(top.getLeftOperand()), rightOp == null ? "" : ", " + opToString(rightOp));
+            return format("%s(%s, %s%s)", top.getOperator(), opToString2(top.getReceiver()),
+                          opToString2(top.getLeftOperand()), rightOp == null ? "" : ", " + opToString2(rightOp));
         }
         else if (operand instanceof ArrayConstantNode) {
             ArrayConstantNode arrayConstantNode = (ArrayConstantNode) operand;
@@ -147,7 +169,7 @@ public class OperatorToString {
             for (Object object: arrayConstantNode.argumentsList) {
                 if (i!=0)
                     builder.append(",");
-                builder.append(opToString((ValueNode)object));
+                builder.append(opToString2((ValueNode)object));
                 i++;
             }
             builder.append("]");
@@ -160,7 +182,7 @@ public class OperatorToString {
                 ValueNode vn = lcn.getValue(i);
                 if (i != 0)
                     builder.append(",");
-                builder.append(opToString(vn));
+                builder.append(opToString2(vn));
             }
             builder.append(")");
             return builder.toString();
@@ -169,9 +191,14 @@ public class OperatorToString {
             ColumnReference cr = (ColumnReference) operand;
             String table = cr.getTableName();
             ResultColumn source = cr.getSource();
-            return format("%s%s%s",table==null?"":format("%s.",table),
-                          cr.getColumnName(),source==null?"":
-                              format("[%s:%s]",source.getResultSetNumber(),source.getVirtualColumnId()));
+            if (! SPARK_EXPRESSION.get()) {
+                return format("%s%s%s", table == null ? "" : format("%s.", table),
+                cr.getColumnName(), source == null ? "" :
+                format("[%s:%s]", source.getResultSetNumber(), source.getVirtualColumnId()));
+            }
+            else {
+                return format("c%d", source.getVirtualColumnId()-1);
+            }
         } else if (operand instanceof VirtualColumnNode) {
             VirtualColumnNode vcn = (VirtualColumnNode) operand;
             ResultColumn source = vcn.getSourceColumn();
@@ -185,12 +212,21 @@ public class OperatorToString {
         } else if (operand instanceof ConstantNode) {
             ConstantNode cn = (ConstantNode) operand;
             try {
-                return cn.getValue().getString();
+                DataValueDescriptor dvd = cn.getValue();
+                String str = null;
+                if (dvd instanceof SQLChar ||
+                    dvd instanceof SQLVarchar ||
+                    dvd instanceof SQLLongvarchar ||
+                    dvd instanceof SQLClob)
+                    str = format("\'%s\'", cn.getValue().getString());
+                else
+                    str = cn.getValue().getString();
+                return str;
             } catch (StandardException se) {
                 return se.getMessage();
             }
         } else if(operand instanceof CastNode){
-            return opToString(((CastNode)operand).getCastOperand());
+            return opToString2(((CastNode)operand).getCastOperand());
         } else{
             return replace(operand.toString(), "\n", " ");
         }

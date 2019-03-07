@@ -37,6 +37,8 @@ import com.splicemachine.db.iapi.sql.Activation;
 import com.splicemachine.db.iapi.sql.ResultSet;
 import com.splicemachine.db.iapi.types.DataValueDescriptor;
 
+import java.util.ArrayList;
+
 /**
  * ResultSetFactory provides a wrapper around all of
  * the result sets needed in an execution implementation.
@@ -340,21 +342,24 @@ public interface ResultSetFactory {
 		@param optimizerEstimatedRowCount	Estimated total # of rows by
 											optimizer
 		@param optimizerEstimatedCost		Estimated total cost by optimizer
+        @param expressionList The projected expressions, if using a
+                              NativeSparkDataSet.
 		@return the project restrict operation as a result set.
 		@exception StandardException thrown when unable to create the
 			result set
 	 */
 	NoPutResultSet getProjectRestrictResultSet(NoPutResultSet source,
-		GeneratedMethod restriction, 
-		GeneratedMethod projection, int resultSetNumber,
-		GeneratedMethod constantRestriction,
-		int mapArrayItem,
-        int cloneMapItem,
-		boolean reuseResult,
-		boolean doesProjection,
-		double optimizerEstimatedRowCount,
-		double optimizerEstimatedCost,
-		String explainPlan) throws StandardException;
+                                               GeneratedMethod restriction,
+                                               GeneratedMethod projection, int resultSetNumber,
+                                               GeneratedMethod constantRestriction,
+                                               int mapArrayItem,
+                                               int cloneMapItem,
+                                               boolean reuseResult,
+                                               boolean doesProjection,
+                                               double optimizerEstimatedRowCount,
+                                               double optimizerEstimatedCost,
+                                               String explainPlan,
+                                               String[] expressions) throws StandardException;
 
 	/**
 		A hash table result set builds a hash table on its source,
