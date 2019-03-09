@@ -90,12 +90,23 @@ public class OperatorToString {
     }
 
     /**
-     * Return string representation of a Derby expression, with column
+     * Return a spark SQL expression given a Derby SQL expression, with column
      * references indicating column names in the source Data Frame.
      */
     public static String opToSparkString(ValueNode operand) {
-        SPARK_EXPRESSION.set(Boolean.TRUE);
-        return opToString2(operand);
+        String retval = null;
+
+        // Do not throw any errors encountered.  An error condition
+        // just means we won't have a spark representation of the
+        // SQL expression for use as a native spark transformation,
+        // but should not be considered a fatal error.
+        try {
+            SPARK_EXPRESSION.set(Boolean.TRUE);
+            retval = opToString2(operand);
+        }
+        catch (Exception e) {
+        }
+        return retval;
     }
 
     public static String opToString2(ValueNode operand){
@@ -214,7 +225,9 @@ public class OperatorToString {
             try {
                 DataValueDescriptor dvd = cn.getValue();
                 String str = null;
-                if (dvd instanceof SQLChar ||
+                if (dvd == null)
+                    str = "null";
+                else if (dvd instanceof SQLChar ||
                     dvd instanceof SQLVarchar ||
                     dvd instanceof SQLLongvarchar ||
                     dvd instanceof SQLClob)

@@ -1183,8 +1183,23 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
 
         //MethodBuilder mb = acb.getConstructor();
         //acb.pushGetExecutionFactoryExpression(mb); // instance
-        boolean pushExpressions = resultColumns != null;
-        int numberOfValues = pushExpressions ? resultColumns.size() : 0;
+        boolean genExpressions = resultColumns != null;
+        int numberOfValues = genExpressions ? resultColumns.size() : 0;
+
+        String [] expressions = new String[numberOfValues];
+
+        int i = 0;
+        if (genExpressions) {
+            for (ResultColumn rc : resultColumns) {
+                expressions[i] = OperatorToString.opToSparkString(rc.getExpression());
+                if (expressions[i] == null) {
+                    genExpressions = false;
+                    numberOfValues = 0;
+                    break;
+                }
+                i++;
+            }
+        }
 
         String stringClassName = "java.lang.String";
         LocalField arrayField = acb.newFieldDeclaration(
@@ -1192,20 +1207,18 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
         mb.pushNewArray(stringClassName, numberOfValues);
         mb.setField(arrayField);
 
-        int i = 0;
-        if (pushExpressions) {
+        i = 0;
+        if (genExpressions) {
             SparkExpressionGenerator seg = new SparkExpressionGenerator();
+            // Now copy the strings we built previously into the String[].
             for (ResultColumn rc : resultColumns) {
                 mb.getField(arrayField);
-                mb.push(OperatorToString.opToSparkString(rc.getExpression()));
+                mb.push(expressions[i]);
                 mb.setArrayElement(i++);
             }
         }
-        else {
-//            mb.getField(arrayField);
-//            mb.push("");
-//            mb.setArrayElement(i);
-        }
+
+        // Now push the String array we just built on the stack.
         mb.getField(arrayField);
 
         //mb.callMethod(VMOpcode.INVOKEINTERFACE, ClassName.ExecutionFactory, "getExpressionList", "java.util.ArrayList", numberOfValues);
