@@ -227,10 +227,11 @@ public class OperatorToString {
                 String str = null;
                 if (dvd == null)
                     str = "null";
-                else if (dvd instanceof SQLChar ||
-                    dvd instanceof SQLVarchar ||
-                    dvd instanceof SQLLongvarchar ||
-                    dvd instanceof SQLClob)
+                else if (SPARK_EXPRESSION.get() &&
+                           (dvd instanceof SQLChar ||
+                            dvd instanceof SQLVarchar ||
+                            dvd instanceof SQLLongvarchar ||
+                            dvd instanceof SQLClob))
                     str = format("\'%s\'", cn.getValue().getString());
                 else
                     str = cn.getValue().getString();
