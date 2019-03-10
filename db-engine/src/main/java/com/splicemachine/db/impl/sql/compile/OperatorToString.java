@@ -32,9 +32,14 @@
 package com.splicemachine.db.impl.sql.compile;
 
 import com.splicemachine.db.iapi.error.StandardException;
+import com.splicemachine.db.iapi.reference.SQLState;
+import com.splicemachine.db.iapi.services.io.StoredFormatIds;
+import com.splicemachine.db.iapi.sql.compile.CompilerContext;
 import com.splicemachine.db.iapi.sql.compile.OptimizablePredicate;
 import com.splicemachine.db.iapi.types.*;
 
+import static com.splicemachine.db.iapi.reference.Property.SPLICE_SPARK_MAJOR_VERSION;
+import static com.splicemachine.db.iapi.services.io.StoredFormatIds.*;
 import static java.lang.String.format;
 
 /**
@@ -45,6 +50,10 @@ import static java.lang.String.format;
 public class OperatorToString {
 
     private static ThreadLocal<Boolean> SPARK_EXPRESSION = new ThreadLocal<>();
+
+    private static ThreadLocal<Double>SPARK_MAJOR_VERSION = getSparkVersion();
+
+    private static double sparkVersion() { return SPARK_MAJOR_VERSION.get().doubleValue(); }
 
     /**
      * Satisfy non-guava (derby client) compile dependency.
@@ -57,6 +66,26 @@ public class OperatorToString {
         }
         ValueNode operand = predicate.getAndNode().getLeftOperand();
         return opToString(operand);
+    }
+
+    private static ThreadLocal<Double> getSparkVersion() {
+
+        double sparkMajorVersion = CompilerContext.DEFAULT_SPLICE_SPARK_MAJOR_VERSION;
+        try {
+            String spliceSparkMajorVersionString = System.getProperty(SPLICE_SPARK_MAJOR_VERSION);
+            if (spliceSparkMajorVersionString != null &&
+                spliceSparkMajorVersionString.startsWith("spark")) {
+                spliceSparkMajorVersionString =
+                  spliceSparkMajorVersionString.split("spark")[1];
+                sparkMajorVersion = Double.valueOf(spliceSparkMajorVersionString);
+            }
+        } catch (Exception e) {
+            // If the property value failed to convert to a float, don't throw an error,
+            // just use the default setting.
+        }
+        ThreadLocal<Double> sparkVersion = new ThreadLocal<>();
+        sparkVersion.set(sparkMajorVersion);
+        return sparkVersion;
     }
 
     /**
@@ -86,7 +115,13 @@ public class OperatorToString {
      */
     public static String opToString(ValueNode operand) {
         SPARK_EXPRESSION.set(Boolean.FALSE);
-        return opToString2(operand);
+        try {
+            return opToString2(operand);
+        }
+        catch(StandardException e) {
+            return "Bad SQL Expression";
+        }
+
     }
 
     /**
@@ -103,13 +138,17 @@ public class OperatorToString {
         try {
             SPARK_EXPRESSION.set(Boolean.TRUE);
             retval = opToString2(operand);
+
         }
         catch (Exception e) {
+        }
+        finally {
+            SPARK_EXPRESSION.set(Boolean.FALSE);
         }
         return retval;
     }
 
-    public static String opToString2(ValueNode operand){
+    public static String opToString2(ValueNode operand) throws StandardException {
         if(operand==null){
             return "";
         }else if(operand instanceof UnaryOperatorNode){
@@ -125,7 +164,10 @@ public class OperatorToString {
                     bron.getOperatorString(), opToString2(bron.getRightOperand()));
             }
             catch (StandardException e) {
-                return "PARSE_ERROR_WHILE_CONVERTING_OPERATOR";
+                if (SPARK_EXPRESSION.get())
+                    throw e;
+                else
+                    return "PARSE_ERROR_WHILE_CONVERTING_OPERATOR";
             }
         }else if(operand instanceof BinaryListOperatorNode){
             BinaryListOperatorNode blon = (BinaryListOperatorNode)operand;
@@ -154,10 +196,27 @@ public class OperatorToString {
             return inList.append("))").toString();
         }else if (operand instanceof BinaryOperatorNode) {
             BinaryOperatorNode bop = (BinaryOperatorNode) operand;
+            ValueNode leftOperand = bop.getLeftOperand();
+            ValueNode rightOperand = bop.getRightOperand();
+
             if (SPARK_EXPRESSION.get()) {
                 if (operand instanceof ConcatenationOperatorNode)
-                    return format("concat(%s, %s)", opToString2(bop.getLeftOperand()),
-                           opToString2(bop.getRightOperand()));
+                    return format("concat(%s, %s)", opToString2(leftOperand),
+                                                    opToString2(rightOperand));
+                else if (operand instanceof TruncateOperatorNode) {
+                    if (leftOperand.getTypeId().getTypeFormatId() == DATE_TYPE_ID) {
+                        return format("trunc(%s, %s)", opToString2(leftOperand),
+                                                       opToString2(rightOperand));
+                    } else if (leftOperand.getTypeId().getTypeFormatId() == DECIMAL_TYPE_ID) {
+                        return format("format_number(%s, %s)", opToString2(leftOperand),
+                                                               opToString2(rightOperand));
+                    } else if (sparkVersion() >= 2.3 &&
+                               leftOperand.getTypeId().getTypeFormatId() == TIMESTAMP_TYPE_ID) {
+                        return format("date_trunc(%s, %s)", opToString2(rightOperand),
+                                                            opToString2(leftOperand));
+                    } else
+                        throw StandardException.newException(SQLState.LANG_DOES_NOT_IMPLEMENT);
+                }
             }
 
             return format("(%s %s %s)", opToString2(bop.getLeftOperand()),
@@ -237,7 +296,10 @@ public class OperatorToString {
                     str = cn.getValue().getString();
                 return str;
             } catch (StandardException se) {
-                return se.getMessage();
+                if (SPARK_EXPRESSION.get())
+                    throw(se);
+                else
+                    return se.getMessage();
             }
         } else if(operand instanceof CastNode){
             return opToString2(((CastNode)operand).getCastOperand());

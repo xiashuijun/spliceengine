@@ -47,6 +47,7 @@ import java.io.ObjectOutput;
 import java.util.Arrays;
 import java.util.List;
 
+
 public class ProjectRestrictOperation extends SpliceBaseOperation {
 		private static Logger LOG = Logger.getLogger(ProjectRestrictOperation.class);
 		private static int PROJECT_RESTRICT_OPERATION_V2 = 2;
@@ -345,6 +346,8 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
             operationContext.pushScope();
 			if (restrictionMethodName != null)
 				sourceSet = sourceSet.filter(new ProjectRestrictPredicateFunction<>(operationContext));
+			if (hasExpressions())
+			    sourceSet = sourceSet.upgradeToSparkNativeDataSet(operationContext);
 			return sourceSet.map(new ProjectRestrictMapFunction<>(operationContext, expressions));
         } finally {
             operationContext.popScope();

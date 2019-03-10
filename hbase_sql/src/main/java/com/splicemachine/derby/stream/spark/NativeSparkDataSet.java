@@ -1059,4 +1059,9 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
         return new SparkTableSamplerBuilder(this, this.context);
     }
 
+    @Override
+    public DataSet upgradeToSparkNativeDataSet(OperationContext operationContext) {
+         return this;
+    }
+
 }
