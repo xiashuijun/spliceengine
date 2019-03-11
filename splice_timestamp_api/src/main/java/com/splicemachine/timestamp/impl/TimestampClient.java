@@ -232,6 +232,10 @@ public class TimestampClient extends TimestampBaseHandler implements TimestampCl
         return getNextTimestamp(true);
     }
 
+    public long refresh() throws TimestampIOException {
+        return getNextTimestamp(true);
+    }
+
     public long getNextTimestamp() throws TimestampIOException {
         return getNextTimestamp(false);
     }
