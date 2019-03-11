@@ -425,9 +425,10 @@ public class H10PartitionAdmin implements PartitionAdmin{
     @Override
     public void enableTableReplication(String tableName) throws IOException {
         TableName tn = tableInfoFactory.getTableInfo(tableName);
+        boolean tableEnabled = admin.isTableEnabled(tn);
         try {
             HTableDescriptor htd = admin.getTableDescriptor(tn);
-            if (admin.isTableEnabled(tn)) {
+            if (tableEnabled) {
                 admin.disableTable(tn);
             }
 
@@ -438,7 +439,7 @@ public class H10PartitionAdmin implements PartitionAdmin{
             SpliceLogUtils.info(LOG, "enabled replication for table %s", tn);
         }
         finally {
-            if (tn != null && !admin.isTableEnabled(tn)) {
+            if (tn != null && !admin.isTableEnabled(tn) && tableEnabled) {
                 admin.enableTable(tn);
             }
         }
@@ -447,9 +448,10 @@ public class H10PartitionAdmin implements PartitionAdmin{
     @Override
     public void disableTableReplication(String tableName) throws IOException {
         TableName tn = tableInfoFactory.getTableInfo(tableName);
+        boolean tableEnabled = admin.isTableEnabled(tn);
         try {
             HTableDescriptor htd = admin.getTableDescriptor(tn);
-            if (admin.isTableEnabled(tn)) {
+            if (tableEnabled) {
                 admin.disableTable(tn);
             }
 
@@ -460,7 +462,7 @@ public class H10PartitionAdmin implements PartitionAdmin{
             SpliceLogUtils.info(LOG, "disabled replication for table %s", tn);
         }
         finally {
-            if (tn != null && !admin.isTableEnabled(tn)) {
+            if (tn != null && !admin.isTableEnabled(tn) && tableEnabled) {
                 admin.enableTable(tn);
             }
         }
