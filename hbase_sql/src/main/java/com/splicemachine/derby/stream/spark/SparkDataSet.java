@@ -870,6 +870,6 @@ public class SparkDataSet<V> implements DataSet<V> {
 
     @Override
     public DataSet upgradeToSparkNativeDataSet(OperationContext operationContext) {
-         return new NativeSparkDataSet(this.rdd, "", operationContext);
+         return new NativeSparkDataSet(this.rdd, operationContext);
     }
 }

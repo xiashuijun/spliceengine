@@ -70,6 +70,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
 		public NoPutResultSet[] subqueryTrackingArray;
 		private ExecRow execRowDefinition;
 		private ExecRow projRow;
+		private String filterPred = null;
 		private String[] expressions = null;
 
 	    protected static final String NAME = ProjectRestrictOperation.class.getSimpleName().replaceAll("Operation","");
@@ -81,6 +82,17 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
 
 		public boolean hasExpressions() {
 		    return (expressions != null && expressions.length > 0);
+        }
+
+        public boolean hasFilterPred() {
+		    return (filterPred != null && !filterPred.isEmpty());
+        }
+
+        public String getFilterPred() {
+		    if (hasFilterPred())
+		        return filterPred;
+		    else
+		        return "true";
         }
 
 		public String[] getExpressions() {
@@ -102,6 +114,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
                                         boolean doesProjection,
                                         double optimizerEstimatedRowCount,
                                         double optimizerEstimatedCost,
+                                        String filterPred,
                                         String[] expressions) throws StandardException {
 				super(activation,resultSetNumber,optimizerEstimatedRowCount,optimizerEstimatedCost);
 				this.restrictionMethodName = (restriction == null) ? null : restriction.getMethodName();
@@ -112,6 +125,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
 				this.reuseResult = reuseResult;
 				this.doesProjection = doesProjection;
 				this.source = source;
+				this.filterPred = filterPred;
 				this.expressions = expressions;
 				init();
 		}
@@ -140,6 +154,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
 				doesProjection = in.readBoolean();
 				source = (SpliceOperation) in.readObject();
 				if (version >= PROJECT_RESTRICT_OPERATION_V2) {
+				    filterPred = readNullableString(in);
                     int numexpressions = in.readInt();
                     if (numexpressions > 0) {
                         expressions = new String[numexpressions];
@@ -162,6 +177,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
 				out.writeBoolean(reuseResult);
 				out.writeBoolean(doesProjection);
 				out.writeObject(source);
+				writeNullableString(filterPred, out);
 				if (expressions == null)
 				    out.writeInt(0);
 				else {
@@ -344,10 +360,10 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
         DataSet<ExecRow> sourceSet = source.getDataSet(dsp);
         try {
             operationContext.pushScope();
+            if (hasFilterPred() || hasExpressions())
+			    sourceSet = sourceSet.upgradeToSparkNativeDataSet(operationContext);
 			if (restrictionMethodName != null)
 				sourceSet = sourceSet.filter(new ProjectRestrictPredicateFunction<>(operationContext));
-			if (hasExpressions())
-			    sourceSet = sourceSet.upgradeToSparkNativeDataSet(operationContext);
 			return sourceSet.map(new ProjectRestrictMapFunction<>(operationContext, expressions));
         } finally {
             operationContext.popScope();

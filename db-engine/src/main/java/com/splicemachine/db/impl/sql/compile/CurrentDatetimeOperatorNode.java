@@ -68,6 +68,10 @@ public class CurrentDatetimeOperatorNode extends ValueNode {
 
 	private int whichType;
 
+	public boolean isCurrentDate() { return whichType == CURRENT_DATE; }
+	public boolean isCurrentTime() { return whichType == CURRENT_TIME; }
+	public boolean isCurrentTimestamp() { return whichType == CURRENT_TIMESTAMP; }
+
 	public void init(Object whichType) {
 		this.whichType = (Integer) whichType;
 

@@ -1445,9 +1445,14 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
         mb.push(costEstimate.getEstimatedCost());
         mb.push(printExplainInformationForActivation());
 
+        String filterPred = OperatorToString.opToSparkString(restriction);
+        if (filterPred == null)
+            filterPred = "";
+        mb.push(filterPred);
+
         ProjectRestrictNode.generateExpressionListOnStack(acb, mb, canUseSparkSQLExpressions ? resultColumns : null);
 
-        mb.callMethod(VMOpcode.INVOKEINTERFACE,null,"getProjectRestrictResultSet", ClassName.NoPutResultSet,13);
+        mb.callMethod(VMOpcode.INVOKEINTERFACE,null,"getProjectRestrictResultSet", ClassName.NoPutResultSet,14);
     }
 
     /**

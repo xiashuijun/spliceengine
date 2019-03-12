@@ -342,8 +342,10 @@ public interface ResultSetFactory {
 		@param optimizerEstimatedRowCount	Estimated total # of rows by
 											optimizer
 		@param optimizerEstimatedCost		Estimated total cost by optimizer
-        @param expressionList The projected expressions, if using a
-                              NativeSparkDataSet.
+        @param filterPred  The filter predicate to apply on a source
+                           NativeSparkDataSet, if applicable.
+        @param expressions The projected expressions to select from a source
+                           NativeSparkDataSet, if applicable.
 		@return the project restrict operation as a result set.
 		@exception StandardException thrown when unable to create the
 			result set
@@ -359,6 +361,7 @@ public interface ResultSetFactory {
                                                double optimizerEstimatedRowCount,
                                                double optimizerEstimatedCost,
                                                String explainPlan,
+                                               String filterPred,
                                                String[] expressions) throws StandardException;
 
 	/**

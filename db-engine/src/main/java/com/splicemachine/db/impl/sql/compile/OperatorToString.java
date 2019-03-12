@@ -51,9 +51,18 @@ public class OperatorToString {
 
     private static ThreadLocal<Boolean> SPARK_EXPRESSION = new ThreadLocal<>();
 
-    private static ThreadLocal<Double>SPARK_MAJOR_VERSION = getSparkVersion();
+    private static ThreadLocal<Double>SPARK_MAJOR_VERSION = new ThreadLocal<>();
 
-    private static double sparkVersion() { return SPARK_MAJOR_VERSION.get().doubleValue(); }
+    private static double sparkVersion() {
+        Double sparkMajorVersion = SPARK_MAJOR_VERSION.get();
+        if (sparkMajorVersion == null) {
+            double sparkVer = getSparkMajorVersion();
+            SPARK_MAJOR_VERSION.set(sparkVer);
+            return sparkVer;
+        }
+        else
+            return sparkMajorVersion.doubleValue();
+    }
 
     /**
      * Satisfy non-guava (derby client) compile dependency.
@@ -68,8 +77,7 @@ public class OperatorToString {
         return opToString(operand);
     }
 
-    private static ThreadLocal<Double> getSparkVersion() {
-
+    private static double getSparkMajorVersion() {
         double sparkMajorVersion = CompilerContext.DEFAULT_SPLICE_SPARK_MAJOR_VERSION;
         try {
             String spliceSparkMajorVersionString = System.getProperty(SPLICE_SPARK_MAJOR_VERSION);
@@ -83,9 +91,7 @@ public class OperatorToString {
             // If the property value failed to convert to a float, don't throw an error,
             // just use the default setting.
         }
-        ThreadLocal<Double> sparkVersion = new ThreadLocal<>();
-        sparkVersion.set(sparkMajorVersion);
-        return sparkVersion;
+        return sparkMajorVersion;
     }
 
     /**
@@ -148,11 +154,21 @@ public class OperatorToString {
         return retval;
     }
 
+    private static void throwNotImplementedError() throws StandardException {
+        throw StandardException.newException(SQLState.LANG_DOES_NOT_IMPLEMENT);
+    }
+
     public static String opToString2(ValueNode operand) throws StandardException {
         if(operand==null){
             return "";
         }else if(operand instanceof UnaryOperatorNode){
             UnaryOperatorNode uop=(UnaryOperatorNode)operand;
+            if (SPARK_EXPRESSION.get()) {
+                if (operand instanceof IsNullNode)
+                    return format("%s %s",opToString2(uop.getOperand()), uop.getOperatorString());
+                else
+                    throwNotImplementedError();
+            }
             return format("%s(%s)",uop.getOperatorString(),opToString2(uop.getOperand()));
         }else if(operand instanceof BinaryRelationalOperatorNode){
             BinaryRelationalOperatorNode bron=(BinaryRelationalOperatorNode)operand;
@@ -207,16 +223,17 @@ public class OperatorToString {
                     if (leftOperand.getTypeId().getTypeFormatId() == DATE_TYPE_ID) {
                         return format("trunc(%s, %s)", opToString2(leftOperand),
                                                        opToString2(rightOperand));
-                    } else if (leftOperand.getTypeId().getTypeFormatId() == DECIMAL_TYPE_ID) {
-                        return format("format_number(%s, %s)", opToString2(leftOperand),
-                                                               opToString2(rightOperand));
-                    } else if (sparkVersion() >= 2.3 &&
+                    }
+                    else if (sparkVersion() >= 2.3 &&
                                leftOperand.getTypeId().getTypeFormatId() == TIMESTAMP_TYPE_ID) {
                         return format("date_trunc(%s, %s)", opToString2(rightOperand),
                                                             opToString2(leftOperand));
                     } else
-                        throw StandardException.newException(SQLState.LANG_DOES_NOT_IMPLEMENT);
+                        throwNotImplementedError();
                 }
+                else if (operand instanceof TimestampOperatorNode ||
+                         operand instanceof SimpleLocaleStringOperatorNode)
+                    throwNotImplementedError();
             }
 
             return format("(%s %s %s)", opToString2(bop.getLeftOperand()),
@@ -228,10 +245,23 @@ public class OperatorToString {
         } else if (operand instanceof TernaryOperatorNode) {
             TernaryOperatorNode top = (TernaryOperatorNode) operand;
             ValueNode rightOp = top.getRightOperand();
+            if (SPARK_EXPRESSION.get()) {
+                if (operand instanceof LikeEscapeOperatorNode) {
+                    if (rightOp != null)
+                        throwNotImplementedError();
+                    else
+                        return format("%s %s %s",  opToString2(top.getReceiver()), top.getOperator(),
+                                opToString2(top.getLeftOperand())) ;
+                }
+                else
+                    throwNotImplementedError();
+            }
             return format("%s(%s, %s%s)", top.getOperator(), opToString2(top.getReceiver()),
                           opToString2(top.getLeftOperand()), rightOp == null ? "" : ", " + opToString2(rightOp));
         }
         else if (operand instanceof ArrayConstantNode) {
+            if (SPARK_EXPRESSION.get())
+                throwNotImplementedError();;
             ArrayConstantNode arrayConstantNode = (ArrayConstantNode) operand;
             StringBuilder builder = new StringBuilder();
             builder.append("[");
@@ -245,6 +275,8 @@ public class OperatorToString {
             builder.append("]");
             return builder.toString();
         } else if (operand instanceof ListValueNode) {
+            if (SPARK_EXPRESSION.get())
+                throwNotImplementedError();;
             ListValueNode lcn = (ListValueNode) operand;
             StringBuilder builder = new StringBuilder();
             builder.append("(");
@@ -302,8 +334,97 @@ public class OperatorToString {
                     return se.getMessage();
             }
         } else if(operand instanceof CastNode){
-            return opToString2(((CastNode)operand).getCastOperand());
-        } else{
+            String castString = null;
+            if (SPARK_EXPRESSION.get()) {
+                StringBuilder sb = new StringBuilder();
+                CastNode cn = (CastNode)operand;
+                ValueNode castOperand = cn.getCastOperand();
+                int typeFormatId = operand.getTypeId().getTypeFormatId();
+                if (!(typeFormatId == BOOLEAN_TYPE_ID  ||
+                      typeFormatId == DATE_TYPE_ID     ||
+                      typeFormatId == CHAR_TYPE_ID     ||
+                      typeFormatId == VARCHAR_TYPE_ID  ||
+                      typeFormatId == TINYINT_TYPE_ID  ||
+                      typeFormatId == SMALLINT_TYPE_ID ||
+                      typeFormatId == INT_TYPE_ID      ||
+                      typeFormatId == LONGINT_TYPE_ID  ||
+                      typeFormatId == DECIMAL_TYPE_ID  ||
+                      typeFormatId == DOUBLE_TYPE_ID   ||
+                      typeFormatId == TIMESTAMP_TYPE_ID))
+                    throwNotImplementedError();
+
+                sb.append(format("CAST(%s ", opToString2(castOperand)));
+                sb.append(format("AS %s) ", cn.getTypeServices().toString()));
+                castString = sb.toString();
+            }
+            else
+                castString = opToString2(((CastNode)operand).getCastOperand());
+
+            return castString;
+        }
+        else if (operand instanceof CoalesceFunctionNode) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("coalesce(");
+            int i = 0;
+            for (Object ob : ((CoalesceFunctionNode) operand).argumentsList) {
+                ValueNode vn = (ValueNode)ob;
+                if (i > 0)
+                    sb.append(", ");
+                sb.append(format("%s", opToString2(vn)));
+                i++;
+            }
+            sb.append(")");
+            return sb.toString();
+        }
+        else if (operand instanceof CurrentDatetimeOperatorNode) {
+            CurrentDatetimeOperatorNode cdtOp = (CurrentDatetimeOperatorNode)operand;
+            StringBuilder sb = new StringBuilder();
+            if (cdtOp.isCurrentDate())
+                sb.append("current_date");
+            else if (cdtOp.isCurrentTime()) {
+                if (SPARK_EXPRESSION.get())
+                    throwNotImplementedError();
+                sb.append("current_time");
+            }
+            else if (cdtOp.isCurrentTimestamp())
+                sb.append("current_timestamp");
+            else
+                throwNotImplementedError();
+            if (SPARK_EXPRESSION.get())
+                sb.append("()");
+
+            return sb.toString();
+        }
+        else {
+            if (SPARK_EXPRESSION.get()) {
+                if (operand instanceof JavaToSQLValueNode &&
+                ((JavaToSQLValueNode) operand).isSystemFunction()) {
+
+                    JavaToSQLValueNode javaFun = (JavaToSQLValueNode) operand;
+                    JavaValueNode method = javaFun.getJavaValueNode();
+
+                    if (method instanceof StaticMethodCallNode) {
+                        StaticMethodCallNode smc = (StaticMethodCallNode) method;
+                        StringBuilder sb = new StringBuilder();
+                        String methodName = smc.getMethodName();
+
+                        sb.append(format("%s(", methodName));
+                        int i = 0;
+                        for (JavaValueNode param : smc.getMethodParms()) {
+                            if (!(param instanceof SQLToJavaValueNode))
+                                throwNotImplementedError();
+                            ValueNode vn = ((SQLToJavaValueNode) param).getSQLValueNode();
+                            if (i > 0)
+                                sb.append(", ");
+                            sb.append(opToString2(vn));
+                            i++;
+                        }
+                        sb.append(")");
+                        return sb.toString();
+                    }
+                    throwNotImplementedError();
+                }
+            }
             return replace(operand.toString(), "\n", " ");
         }
     }

@@ -178,6 +178,7 @@ public class SpliceGenericResultSetFactory implements ResultSetFactory {
                                                       double optimizerEstimatedRowCount,
                                                       double optimizerEstimatedCost,
                                                       String explainPlan,
+                                                      String filterPred,
                                                       String[] expressions) throws StandardException {
         assert source!=null:"passed in source is null";
         SpliceLogUtils.trace(LOG, "getProjectRestrictResultSet");
@@ -191,6 +192,7 @@ public class SpliceGenericResultSetFactory implements ResultSetFactory {
                     doesProjection,
                     optimizerEstimatedRowCount,
                     optimizerEstimatedCost,
+                    filterPred,
                     expressions);
             op.setExplainPlan(explainPlan);
             return op;
