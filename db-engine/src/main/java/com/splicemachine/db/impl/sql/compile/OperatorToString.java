@@ -166,6 +166,33 @@ public class OperatorToString {
             if (SPARK_EXPRESSION.get()) {
                 if (operand instanceof IsNullNode)
                     return format("%s %s",opToString2(uop.getOperand()), uop.getOperatorString());
+                else if (operand instanceof ExtractOperatorNode) {
+                    ExtractOperatorNode eon = (ExtractOperatorNode) operand;
+                    String functionName = eon.sparkFunctionName();
+
+                    // Splice extracts fractional seconds, but spark only extracts whole seconds.
+                    if (functionName.equals("SECOND"))
+                        throwNotImplementedError();
+                    else
+                        return format("%s(%s)", functionName, opToString2(uop.getOperand()));
+                }
+                else if (operand instanceof DB2LengthOperatorNode) {
+                    DB2LengthOperatorNode lengthOp = (DB2LengthOperatorNode)operand;
+                    String functionName = lengthOp.getOperatorString();
+                    ValueNode vn = lengthOp.getOperand();
+                    int type = vn.getTypeId().getTypeFormatId();
+                    boolean stringType =
+                             (type == CHAR_TYPE_ID ||
+                              type == VARCHAR_TYPE_ID ||
+                              type == LONGVARCHAR_TYPE_ID ||
+                              type == CLOB_TYPE_ID);
+                    // The length function has the same behavior on splice and
+                    // spark only for string types.
+                    if (!stringType)
+                        throwNotImplementedError();
+
+                    return format("%s(%s)", functionName, opToString2(lengthOp.getOperand()));
+                }
                 else
                     throwNotImplementedError();
             }
@@ -253,6 +280,11 @@ public class OperatorToString {
                         return format("%s %s %s",  opToString2(top.getReceiver()), top.getOperator(),
                                 opToString2(top.getLeftOperand())) ;
                 }
+                else if (operand.getClass() == TernaryOperatorNode.class) {
+                    if (top.getOperator().equals("LOCATE"))
+                        return format("%s(%s, %s, %s)",  top.getOperator(), opToString2(top.getReceiver()),
+                                opToString2(top.getLeftOperand()), opToString2(top.getRightOperand())) ;
+                }
                 else
                     throwNotImplementedError();
             }
@@ -318,12 +350,27 @@ public class OperatorToString {
                 String str = null;
                 if (dvd == null)
                     str = "null";
-                else if (SPARK_EXPRESSION.get() &&
-                           (dvd instanceof SQLChar ||
-                            dvd instanceof SQLVarchar ||
-                            dvd instanceof SQLLongvarchar ||
-                            dvd instanceof SQLClob))
-                    str = format("\'%s\'", cn.getValue().getString());
+                else if (SPARK_EXPRESSION.get()) {
+                    if (dvd instanceof SQLChar ||
+                        dvd instanceof SQLVarchar ||
+                        dvd instanceof SQLLongvarchar ||
+                        dvd instanceof SQLClob)
+                        str = format("\'%s\'", cn.getValue().getString());
+                    else if (dvd instanceof SQLDate)
+                        str = format("date(\'%s\')", cn.getValue().getString());
+                    else if (dvd instanceof SQLTimestamp)
+                        str = format("timestamp(\'%s\')", cn.getValue().getString());
+                    else if (dvd instanceof SQLDouble)
+                        str = format("double(\'%s\')", cn.getValue().getString());
+                    else if (dvd instanceof SQLInteger  ||
+                             dvd instanceof SQLSmallint ||
+                             dvd instanceof SQLTinyint  ||
+                             dvd instanceof SQLDecimal  ||
+                             dvd instanceof SQLBoolean)
+                        str = cn.getValue().getString();
+                    else
+                        throwNotImplementedError();
+                }
                 else
                     str = cn.getValue().getString();
                 return str;
@@ -344,6 +391,7 @@ public class OperatorToString {
                       typeFormatId == DATE_TYPE_ID     ||
                       typeFormatId == CHAR_TYPE_ID     ||
                       typeFormatId == VARCHAR_TYPE_ID  ||
+                      typeFormatId == LONGVARCHAR_TYPE_ID  ||
                       typeFormatId == TINYINT_TYPE_ID  ||
                       typeFormatId == SMALLINT_TYPE_ID ||
                       typeFormatId == INT_TYPE_ID      ||
@@ -354,7 +402,10 @@ public class OperatorToString {
                     throwNotImplementedError();
 
                 sb.append(format("CAST(%s ", opToString2(castOperand)));
-                sb.append(format("AS %s) ", cn.getTypeServices().toString()));
+                if (typeFormatId == LONGVARCHAR_TYPE_ID)
+                    sb.append("AS varchar(32670)) ");
+                else
+                    sb.append(format("AS %s) ", cn.getTypeServices().toSparkString()));
                 castString = sb.toString();
             }
             else
@@ -407,7 +458,18 @@ public class OperatorToString {
                         StaticMethodCallNode smc = (StaticMethodCallNode) method;
                         StringBuilder sb = new StringBuilder();
                         String methodName = smc.getMethodName();
+                        boolean isFloorOrCeilFunc = false;
 
+                        if (methodName.equals("toDegrees"))
+                            methodName = "degrees";
+                        else if (methodName.equals("floor")) {
+                            methodName = "double(floor";
+                            isFloorOrCeilFunc = true;
+                        }
+                        else if (methodName.equals("ceil")) {
+                            methodName = "double(ceil";
+                            isFloorOrCeilFunc = true;
+                        }
                         sb.append(format("%s(", methodName));
                         int i = 0;
                         for (JavaValueNode param : smc.getMethodParms()) {
@@ -419,11 +481,15 @@ public class OperatorToString {
                             sb.append(opToString2(vn));
                             i++;
                         }
-                        sb.append(")");
+                        if (isFloorOrCeilFunc)
+                            sb.append(")");
+                        sb.append(") ");
                         return sb.toString();
                     }
                     throwNotImplementedError();
                 }
+                else
+                    throwNotImplementedError();
             }
             return replace(operand.toString(), "\n", " ");
         }

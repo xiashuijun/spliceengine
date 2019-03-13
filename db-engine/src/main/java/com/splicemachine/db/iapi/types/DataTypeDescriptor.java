@@ -1595,6 +1595,10 @@ public class DataTypeDescriptor implements Formatable{
         return typeDescriptor.toString();
     }
 
+    public String toSparkString(){
+        return typeDescriptor.toSparkString();
+    }
+
     // Formatable methods
 
     /**
